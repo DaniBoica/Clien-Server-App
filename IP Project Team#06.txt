@@ -1,0 +1,238 @@
+ 1 #include <sys/types.h>
+  2 #include <sys/socket.h>
+  3 #include <stdio.h>
+  4 #include <string.h>
+  5 #include <netdb.h>
+  6 #include <unistd.h>
+  7 #include <stdlib.h>
+  8
+  9 // Define constants for the server
+ 10 #define BACKLOG 10     // How many pending connections queue will hold
+ 11 #define PORT 22026  // Port number for the server
+ 12 #define BUFFER_SIZE 1024// For sending the HTML file in chunks of x bytes
+ 13
+ 14 // Function to send a file over a socket
+ 15
+ 16 void sendFile(FILE *file, int socket) {
+ 17     char buffer[BUFFER_SIZE];
+ 18     size_t read_byt;
+ 19
+ 20     // Read data from the file into the buffer and send it over the socket
+ 21     while (( read_byt = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+ 22         if (send(socket, buffer, read_byt, 0) == -1) {
+ 23             perror("Error sending data");
+ 24             break;
+ 25         }
+ 26     }
+ 27
+ 28     // Clear the buffer after sending
+ 29     memset(buffer, 0, sizeof(buffer));
+ 30 }
+ 31
+ 32
+ 33 // Main function
+ 34 int main() {
+ 35     int s, status;  // Socket descriptor and status variable
+ 36     struct addrinfo hints, *res;  // Structs for address information
+ 37
+ 38     // Initialize the hints struct to zero
+ 39     memset(&hints, 0, sizeof hints);
+ 40     hints.ai_family = AF_INET6;  // Use IPv6
+ 41     hints.ai_socktype = SOCK_STREAM;  // Use a stream socket
+ 42
+ 43     // Get address information for the server
+ 44     getaddrinfo("axu.tm", "80", &hints, &res);
+ 45
+ 46 // Step I - SOCKET, CONNECTION
+ 47
+ 48     // Creating a socket
+ 49     s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+ 50
+ 51     // Check if the socket creation was successful
+ 52     if (s == -1)
+ 53         printf("Socket error!");
+ 54     else
+ 55         printf("Socket open!");
+ 56
+ 57     // Connect to the server
+ 58     status = connect(s, res->ai_addr, res->ai_addrlen);
+ 59
+ 60     // Check the status of the connection
+ 61     if (status == -1)
+ 62         printf("\nConnection error"); // Print an error message if the connection fails
+ 63     else
+ 64         printf("\nConnection established"); // Print a success message if the connection     succeeds
+ 65
+ 66 // Step II
+ 67
+ 68     char *msg = "GET / HTTP/1.0\r\n\r\n";
+ 69     send(s, msg, strlen(msg) + 1, MSG_OOB);
+ 70
+ 71     char buffer1[1024]; // Buffer for receiving data
+ 72     int byte_count; // Number of bytes received
+ 73
+ 74     // Creating a file + outputting the info received from the IPv6 server
+ 75     char *filename = "index.html"; // Name of the file to write data to
+ 76
+ 77     // Open a file in append  mode ("a")
+ 78     // Pointer is positioned at the end of the file, allowing to append data (ensures tha    t whenever the data is written, no information is repeated)
+ 79     FILE *file = fopen(filename, "a");
+ 80
+ 81     // Check if the file can be opened
+ 82     if (file == NULL) {
+ 83         printf("Error opening file");
+ 84         return (1); // Exit with an error code if file opening fails
+ 85     }
+ 86
+ 87     while ((byte_count = recv(s, buffer1, sizeof buffer1, 0)) > 0) {
+ 88         fprintf(file, "%.*s", byte_count, buffer1); // Append received data to the file
+ 89     }
+ 90
+ 91     fclose(file); // Close the file
+ 92     close(s); // Close the socket
+ 93
+ 94 // Stage III - IPv4 Server
+ 95
+ 96     // Print a message indicating the start of the IPv4 server
+ 97     printf("\nStart of the IPV4 Server ");
+ 98
+ 99     // Declare variables for handling address information
+100     int status1;
+101     struct addrinfo hints1, *res1;
+102     struct addrinfo *servinfo; // Will point to the results
+103
+104     // Declare variables for managing the connection
+105     struct sockaddr_storage client_addr;
+106     socklen_t addr_size;
+107     int new_fd; // New socket
+108
+109     // Ensure that the hints1 struct is empty
+110     memset(&hints1, 0, sizeof hints1);
+111     hints1.ai_family = AF_UNSPEC;     // IPv4 or IPv6
+112     hints1.ai_socktype = SOCK_STREAM; // TCP stream sockets
+113     hints1.ai_flags = AI_PASSIVE;     // Fill the IP
+114
+115     // Create a socket
+116     int server_socket;
+117
+118     // Define the IP address for the server
+119     const char *ip_address = "46.243.115.196";
+120
+121     // Convert the port number into a string
+122     char port_str[6];
+123     sprintf(port_str, "%d", PORT);
+124
+125     // Allocate and fill the res1 struct
+126     if (getaddrinfo(ip_address, port_str, &hints1, &res1) != 0) {
+127         perror("getaddrinfo");
+128         exit(1);
+129     }
+130
+131     // Create a socket using the address information
+132     server_socket = socket(res1->ai_family, res1->ai_socktype, res1->ai_protocol);
+133
+134     // Check for errors in socket creation
+135     if (server_socket == -1) {
+136         perror("socket");
+137         exit(1);
+138     }
+139
+140     // Bind
+141     // Set the SO_REUSEADDR socket option to allow reuse of the local address
+142     int yes = 1;
+143     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
+144         perror("setsockopt(SO_REUSEADDR) failed");
+145         exit(EXIT_FAILURE);
+146     }
+147
+148     // Variable to store the result of the bind operation
+149     int bind_results;
+150
+151     // Bind the socket to a specific address and port
+152     bind_results = bind(server_socket, res1->ai_addr, res1->ai_addrlen);
+153
+154     // Check if the binding was successful
+155     if (bind_results == 0) {
+156         // Binding was successful
+157         printf("\nBind successful!\n");
+158     } else {
+159         // Binding failed
+160         perror("Bind failed");
+161         // Handle the error or exit the program
+162         exit(1);
+163     }
+164
+165    // Listen
+166 // Set the server socket to listen for incoming connections
+167
+168 // Check if the listen operation was successful
+169 if (listen(server_socket, BACKLOG) < 0) {
+170     perror("Listen failed");
+171     exit(EXIT_FAILURE);
+172 }
+173
+174 // Message indicating that the server is listening on a specific port
+175 printf("\nServer listening on port %d...\n", PORT);
+176
+177 while (1) {
+178     // Accept incoming connections
+179     addr_size = sizeof client_addr;
+180
+181     // Accept a new connection and obtain a new socket descriptor
+182     if ((new_fd = accept(server_socket, (struct sockaddr *)&client_addr, &addr_size)) < 0    ) {
+183         perror("Accept failed");
+184         continue;  // Continue to the next iteration if accept fails
+185     }
+186
+187     // Print a message indicating that a client has connected
+188     printf("\nClient connected!");
+189
+190     // Declare a buffer to store received data
+191     char buffer2[1024] = {0};
+192     int num_bytes_received;
+193
+194     // Loop for sending and receiving data
+195     while (1) {
+196         // Receive data from the connected client
+197         num_bytes_received = recv(new_fd, buffer2, 1024, 0);
+198         printf("\nRECEIVED: %s\n", buffer2);
+199
+200         // Check for receive errors
+201         if (num_bytes_received <= 0) {
+202             printf("Connection closed or error");
+203             break;  // Exit the inner loop if the connection is closed or an error occurs
+204         }
+205
+206         // Send confirmation based on received data
+207         if (strcmp(buffer2, "06#") != 0) {
+208             printf("The received string is not equal to '06#'\n");
+209         } else {
+210             // If the received string is '06#', indicate that a file will be sent
+211             printf("\nSending File!");
+212             FILE *file = fopen("index.html", "rb");
+213
+214             // Check if the file can be opened
+215             if (file == NULL) {
+216                 perror("Error opening file");
+217                 return 1;
+218             }
+219
+220             // Send the contents of the file to the client
+221             sendFile(file, new_fd);
+222             fclose(file); // Close the file after sending
+223         }
+224     }
+225
+226
+227     close(new_fd);
+228 }
+229
+230 // Close the server socket
+231 close(server_socket);
+232 freeaddrinfo(res1);
+233 }
+
+
+
+
+
